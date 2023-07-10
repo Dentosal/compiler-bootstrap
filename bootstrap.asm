@@ -148,15 +148,17 @@ _start:
     movsb
     loop .for_char_in_buffer
     jmp .loop
-
 .whitespace:
     ; If token buffer is nonempty, execute the token
     cmp rdi, r11
+    je .empty_token
     call execute_token
     mov rdi, r11 ; clear token buffer
+.empty_token:
     inc rsi
     loop .for_char_in_buffer
     jmp .loop
+
 .eof:
 
     mov rdi, 0 ; success
