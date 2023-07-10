@@ -3,6 +3,55 @@
 bits 64
 org 0x400000
 
+; #### Helper macros ####
+
+
+; Generates function that prints message and exits with error code
+%macro dbg 1
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+
+    mov rax, 1      ; write
+    mov rdi, 1      ; stdout
+    mov rsi, %%msg ; message
+    mov rdx, %%len ; message length
+    syscall
+
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+    jmp %%over
+
+%%msg: db %1, 10
+%%len: equ $ - %%msg
+%%over:
+%endmacro
+
+
+%macro jmp_if_whitespace 1
+    cmp byte [rsi], 0x09 ; \t
+    je %1
+    cmp byte [rsi], 0x0a ; \n
+    je %1
+    cmp byte [rsi], 0x0d ; \r
+    je %1
+    cmp byte [rsi], 0x20 ; space
+    je %1
+%endmacro
+
 ; #### ELF header ####
 
 elf:
@@ -37,7 +86,7 @@ dq filesize     ; Size in file
 dq filesize     ; Size in memory
 dq 0x1000       ; Alignment
 
-; #### Executable code ####
+; #### Compiler I/O handling ####
 
 _start:
     ; Validate argc == 3, print usage otherwise
@@ -45,16 +94,11 @@ _start:
     cmp eax, 3
     jne usage
 
-    ; Use mmap to allocate a buffer
-    mov rax, 9              ; mmap
-    mov rdi, 0              ; let kernel choose address
-    mov rsi, 4096           ; page size
-    mov rdx, 3              ; rw
-    mov r10, 0x22           ; private anonymous mapping
-    syscall                 ; rax = address
-    cmp rax, -1
-    je error_mmap_buffer
-    mov r10, rax             ; keep buffer in r10
+    ; Use mmap to allocate some buffers
+    call alloc_page
+    mov r10, rax             ; Input buffer in r10
+    call alloc_page
+    mov r11, rax             ; Token buffer in r11
 
     ; Open input file
     mov rdi, [rsp + 16]     ; argv[1]
@@ -76,7 +120,15 @@ _start:
     test rax, rax
     js error_open_output
 
-    ; Copy input to output
+    ; Start by writing the ELF header to output, copying from the running binary
+    mov rdx, 0x40+0x38      ; bytes to write (ELF header size)
+    mov rax, 1              ; write
+    mov rdi, r9             ; fd
+    mov rsi, 0x400000       ; buffer at r10
+    syscall                 ; rax = bytes written
+    js error_write_output
+
+    ; Read and compile
 .loop:
     ; Read from file
     mov rax, 0              ; read
@@ -85,21 +137,72 @@ _start:
     syscall                 ; rax = bytes read
     test rax, rax
     js error_read_input
-    jz .done
+    jz .eof
 
-    ; Write to file
-    mov rdx, rax            ; bytes to write (from output of read)
-    mov rax, 1              ; write
-    mov rdi, r9             ; fd
-    mov rsi, r10            ; buffer at r10
-    syscall                 ; rax = bytes written
+    mov rdi, r11    ; pointer to current position in token buffer
+    mov rsi, r10    ; pointer to current position in input buffer
+    mov rcx, rax    ; loop limit at bytes read
 
+.for_char_in_buffer:
+    jmp_if_whitespace .whitespace
+    movsb
+    loop .for_char_in_buffer
     jmp .loop
-.done:
+
+.whitespace:
+    ; If token buffer is nonempty, execute the token
+    cmp rdi, r11
+    call execute_token
+    mov rdi, r11 ; clear token buffer
+    inc rsi
+    loop .for_char_in_buffer
+    jmp .loop
+.eof:
 
     mov rdi, 0 ; success
     jmp exit
 
+
+; #### Actual compilation ####
+
+; Token at starts at r11 and ends at rdi
+execute_token:
+    push rax
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+
+    mov rcx, rdi
+    sub rcx, r11
+
+    mov rax, 1      ; write
+    mov rdi, 1      ; stdout
+    mov rsi, r11    ; message
+    mov rdx, rcx    ; message length
+    syscall
+
+    mov rax, 1      ; write
+    mov rdi, 1      ; stdout
+    mov rsi, linebreak
+    mov rdx, 1
+    syscall
+
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rax
+
+    ret
 
 ; #### Error handling ####
 
@@ -124,11 +227,37 @@ error_mmap_buffer:  error   "error: could not allocate buffer"
 error_open_input:   error   "error: could not open input file"
 error_read_input:   error   "error: could not read input file"
 error_open_output:  error   "error: could not open output file"
+error_write_output: error   "error: could not write output file"
 
 ; Exits with return code from rdi
 exit:
     mov rax, 60       ; exit
     syscall
+
+; #### Memory management functions ####
+
+; Allocate a buffer of 4096 bytes and store address in r10
+; Returns rax = address
+alloc_page:
+    push rdi
+    push rsi
+    push rdx
+    push r10
+
+    mov rax, 9              ; mmap
+    mov rdi, 0              ; let kernel choose address
+    mov rsi, 4096           ; page size
+    mov rdx, 3              ; rw
+    mov r10, 0x22           ; private anonymous mapping
+    syscall                 ; rax = address
+    cmp rax, -1
+    je error_mmap_buffer
+
+    pop r10
+    pop rdx
+    pop rsi
+    pop rdi
+    ret
 
 ; #### String processing functions ####
 
@@ -151,6 +280,11 @@ strlen:
     pop rdi
 
     ret
+
+; #### String literals ####
+
+linebreak: db 10
+
 
 ; #### Helper constants ####
 
