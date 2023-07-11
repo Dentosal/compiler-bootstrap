@@ -41,10 +41,30 @@ init_interpreter:
     add_builtin_op startmacro
     add_builtin_op endmacro
     add_builtin_op zero
-    add_builtin_op inc
     add_builtin_op drop
     add_builtin_op swap
     add_builtin_op dup
+    add_builtin_op inc
+    add_builtin_op dec
+    add_builtin_op add
+    add_builtin_op mul
+    add_builtin_op div
+    add_builtin_op shr
+    add_builtin_op shl
+    add_builtin_op not
+    add_builtin_op and
+    add_builtin_op or
+    add_builtin_op xor
+    add_builtin_op ptr_read_u8
+    add_builtin_op ptr_read_u16
+    add_builtin_op ptr_read_u32
+    add_builtin_op ptr_read_u64
+    add_builtin_op ptr_write_u8
+    add_builtin_op ptr_write_u16
+    add_builtin_op ptr_write_u32
+    add_builtin_op ptr_write_u64
+    add_builtin_op syscall
+    add_builtin_op output_file_fd
     add_builtin_op show
     add_builtin_op commands
     ; Clear the last link, so that the linked list ends here
@@ -211,7 +231,7 @@ execute_token:
     inc r12
     mov [r12], byte 0xd0 ; ModR/M byte: mod=0b11 (register addressing), reg=0b010 (= /2), m=0b000 (rax)
     inc r12
-    ; Pop rbx and rax
+    ; Pop rax
     mov [r12], byte 0x58
     inc r12
 

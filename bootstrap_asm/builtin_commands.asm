@@ -61,14 +61,12 @@ def endmacro, ";"
     jmp error_endmacro_outside
 endef
 
+
+; == Stack operations ==
+
 def zero
     sub r15, 8
     mov qword [r15], 0
-    ret
-endef
-
-def inc
-    inc qword [r15]
     ret
 endef
 
@@ -93,6 +91,208 @@ def dup
     pop rax
     ret
 endef
+
+; == Arithmetic and logic ==
+
+def inc
+    inc qword [r15]
+    ret
+endef
+
+def dec
+    dec qword [r15]
+    ret
+endef
+
+def add
+    push_many rax, rbx
+    ds_pop rbx
+    ds_pop rax
+    add rax, rbx
+    ds_push rax
+    pop_many rax, rbx
+    ret
+endef
+
+def mul
+    push_many rax, rdx
+    ds_pop rdx
+    ds_pop rax
+    mul rdx
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
+def div
+    push_many rax, rdx
+    ds_pop rdx
+    ds_pop rax
+    div rdx
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
+def shr
+    push_many rax, rcx
+    ds_pop rcx
+    ds_pop rax
+    shr rax, cl
+    ds_push rax
+    pop_many rax, rcx
+    ret
+endef
+
+def shl
+    push_many rax, rcx
+    ds_pop rcx
+    ds_pop rax
+    shl rax, cl
+    ds_push rax
+    pop_many rax, rcx
+    ret
+endef
+
+def not
+    not qword [rsp]
+    ret
+endef
+
+def and
+    push_many rax, rdx
+    ds_pop rdx
+    ds_pop rax
+    and rax, rdx
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
+def or
+    push_many rax, rdx
+    ds_pop rax
+    ds_pop rdx
+    or rax, rdx
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
+def xor
+    push_many rax, rdx
+    ds_pop rdx
+    ds_pop rax
+    xor rax, rdx
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
+; == Control flow ==
+
+; TODO
+
+; == Raw memory access ==
+
+def ptr_read_u8
+    push rax
+    ds_pop rax
+    xor rax, rax
+    mov al, [rax]
+    ds_push rax
+    pop rax
+    ret
+endef
+
+def ptr_read_u16
+    push rax
+    ds_pop rax
+    xor rax, rax
+    mov ax, [rax]
+    ds_push rax
+    pop rax
+    ret
+endef
+
+def ptr_read_u32
+    push rax
+    ds_pop rax
+    xor rax, rax
+    mov eax, [rax]
+    ds_push rax
+    pop rax
+    ret
+endef
+
+def ptr_read_u64
+    push rax
+    ds_pop rax
+    mov rax, [rax]
+    ds_push rax
+    pop rax
+    ret
+endef
+
+def ptr_write_u8
+    push_many rax, rbx
+    ds_pop rax ; value
+    ds_pop rbx ; address
+    mov [rbx], al
+    pop_many rax, rbx
+    ret
+endef
+
+def ptr_write_u16
+    push_many rax, rbx
+    ds_pop rax ; value
+    ds_pop rbx ; address
+    mov [rbx], ax
+    pop_many rax, rbx
+    ret
+endef
+
+def ptr_write_u32
+    push_many rax, rbx
+    ds_pop rax ; value
+    ds_pop rbx ; address
+    mov [rbx], eax
+    pop_many rax, rbx
+    ret
+endef
+
+def ptr_write_u64
+    push_many rax, rbx
+    ds_pop rax ; value
+    ds_pop rbx ; address
+    mov [rbx], rax
+    pop_many rax, rbx
+    ret
+endef
+
+; == System calls ==
+
+def syscall
+    push_many rax, rdi, rsi, rdx, r10, r8, r9
+    ds_pop r9
+    ds_pop r8
+    ds_pop r10
+    ds_pop rdx
+    ds_pop rsi
+    ds_pop rdi
+    ds_pop rax
+    syscall
+    ds_push rax
+    pop_many rax, rdi, rsi, rdx, r10, r8, r9
+    ret
+endef
+
+def output_file_fd ; Compilation output file
+    ds_pop r9
+    ret
+endef
+
+; == Debugging and dev utils ==
 
 def show
     dbg_int [r15]
