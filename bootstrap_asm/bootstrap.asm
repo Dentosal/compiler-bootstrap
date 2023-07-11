@@ -1,8 +1,19 @@
 ; nasm -f bin -o bootstrap bootstrap.asm && chmod +x bootstrap && ./bootstrap input output
+;
+; The following registers hold the compiler state:
+; r8: input file fd
+; r9: output file fd
+; r10: input buffer
+; r11: current token buffer
+; r12: pointer to next free byte in data buffer
+; r13: pointer to interpreter state struct
+; r14: interpreter call stack
+; r15: interpreter data stack
 
 bits 64
 org 0x400000
 
+%include "macros.asm"
 %include "debug.asm"
 
 ; #### Helper macros ####
@@ -134,6 +145,24 @@ _start:
     je .empty_token
     call execute_token
     mov rdi, r11 ; clear token buffer
+
+    ; push_all
+
+    ; mov rsi, r10    ; message
+    ; mov rdx, rax     ; message length
+    ; mov rax, 1      ; write
+    ; mov rdi, 1      ; stdout
+    ; syscall
+
+    ; mov rax, 1      ; write
+    ; mov rdi, 1      ; stdout
+    ; mov rsi, separator
+    ; mov rdx, separator_len
+    ; syscall
+
+    ; pop_all
+
+
 .empty_token:
     inc rsi
     loop .for_char_in_buffer
@@ -145,154 +174,14 @@ _start:
     jmp exit
 
 
-; #### Token interpreter ####
-
-; Initializes interpreter tokens to r12 memory area
-
-%include "ops.asm"
-
-%macro add_ti_op 1
-    add r12, 16
-    mov qword [r12 - 16], ti_%1
-    mov qword [r12 - 8], r12
-%endmacro
-
-init_interpreter:
-    ; Builtin operations
-    add_ti_op zero
-    add_ti_op inc
-    add_ti_op drop
-    add_ti_op swap
-    add_ti_op dup
-    add_ti_op show
-    ; Clear the last link, so that the linked list ends here
-    mov qword [r12 - 8], 0
-    ret
-
-; Token at starts at r11 and ends at rdi
-execute_token:
-    push rax
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push r8
-    push r9
-    push r10
-    push r11
-
-
-    ; Debug print token name before executing
-    dbg_nobreak "Executing token: "
-
-    mov rcx, rdi
-    sub rcx, r11
-    push rdi
-    push rcx
-
-    mov rax, 1      ; write
-    mov rdi, 1      ; stdout
-    mov rsi, r11    ; message
-    mov rdx, rcx    ; message length
-    syscall
-
-    mov rax, 1      ; write
-    mov rdi, 1      ; stdout
-    mov rsi, linebreak
-    mov rdx, 1
-    syscall
-
-    pop rcx
-    pop rdi
-
-
-    ; Lookup token from a linked list starting from
-    mov rax, r13
-    jmp .traverse_lookup
-.traverse_next:
-    mov rax, [rax + 8] ; Link to next item
-    cmp rax, 0
-    je .traverse_not_found
-.traverse_lookup:
-    mov rbx, [rax]
-    mov rdx, [rbx + 16] ; Name len
-
-    cmp rdx, rcx    ; Len mismatch?
-    jne .traverse_next
-
-    ; Obtain name ptr
-    mov rsi, rbx
-    add rsi, 24
-
-    ; Compare to name at r11
-    mov rdi, r11
-    push rcx
-    repe cmpsb
-    pop rcx
-    jnz .traverse_next ; Mismatch
-
-    ; Found the token, call the function
-    call [rbx]
-
-    dbg "Done executing token"
-
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rax
-
-    ret
-
-.traverse_not_found: ; Name resolution failed
-    ; Prefix the error message with the token
-    mov rcx, rdi
-    sub rcx, r11
-
-    mov rax, 1      ; write
-    mov rdi, 1      ; stdout
-    mov rsi, r11    ; message
-    mov rdx, rcx    ; message length
-    syscall
-
-    jmp error_unknown_token
-
-
 ; #### Error handling ####
 
-; Generates function that prints message and exits with error code
-%macro error 1
-%%0:
-    mov rax, 1     ; write
-    mov rdi, 1     ; stdout
-    mov rsi, .msg  ; message
-    mov rdx, .len  ; message length
-    syscall
-    mov rdi, 1 ; Error code
-    jmp exit
+%include "error.asm"
 
-.msg: db %1, 10
-.len: equ $ - .msg
-%endmacro
+; #### Token interpreter ####
 
-; Error messages
-usage:                  error   "usage: bootstrap input output"
-error_mmap_buffer:      error   "error: could not allocate buffer"
-error_munmap:           error   "error: could not free buffer"
-error_open_input:       error   "error: could not open input file"
-error_read_input:       error   "error: could not read input file"
-error_open_output:      error   "error: could not open output file"
-error_write_output:     error   "error: could not write output file"
-error_unknown_token:    error   ": error: unable to resolve name"
+%include "interpreter.asm"
 
-; Exits with return code from rdi
-exit:
-    mov rax, 60       ; exit
-    syscall
 
 ; #### Memory management functions ####
 
@@ -327,12 +216,7 @@ alloc_page:
 
 ; Free a buffer pointed by rdi
 free_page:
-    push rdi
-    push rsi
-    push rdx
-    push r10
-    push r9
-    push r8
+    push_many rdi, rsi, rdx, r10, r9, r8
 
     mov rax, 11             ; munmap
     mov rsi, 4096           ; page size
@@ -342,12 +226,7 @@ free_page:
     cmp rax, -1
     je error_munmap
 
-    pop r8
-    pop r9
-    pop r10
-    pop rdx
-    pop rsi
-    pop rdi
+    pop_many r8, r9, r10, rdx, rsi, rdi
     ret
 
 ; Store a lenght-prefixed byte array in unfreeable data area (r12)
@@ -425,6 +304,8 @@ len_prefixed_eq:
 ; #### String literals ####
 
 linebreak: db 10
+separator: db "======================", 10
+separator_len: equ $ - separator
 
 ; #### Helper constants ####
 
