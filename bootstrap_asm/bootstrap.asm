@@ -180,7 +180,8 @@ alloc_page:
     mov rax, 9              ; mmap
     mov rdi, 0              ; let kernel choose address
     mov rsi, 4096           ; page size
-    mov rdx, 3              ; rw
+    mov rdx, 7              ; rwx
+    ;mov rdx, 3              ; rw
     mov r10, 0x22           ; private anonymous mapping
     xor r8, r8
     xor r9, r9

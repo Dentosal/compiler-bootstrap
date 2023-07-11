@@ -23,7 +23,8 @@ error_read_input:       error   "error: could not read input file"
 error_open_output:      error   "error: could not open output file"
 error_write_output:     error   "error: could not write output file"
 error_unknown_token:    error   ": error: unable to resolve name"
-error_macro_nesting:    error   "error: cannot nest macros"
+error_macro_nesting:    error   "error: cannot nest definitions"
+error_endmacro_outside: error   "error: endmacro (;) outside macro context"
 
 ; Exits with return code from rdi
 exit:

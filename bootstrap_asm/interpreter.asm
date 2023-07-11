@@ -91,6 +91,8 @@ execute_token:
 .initalize_macro_mode:
     dbg "Defining a new macro"
 
+    ; TODO: check if the command already exists and error out if it does
+
     ; Add new entry to the linked list of commands
     call last_command       ; rax = *last_command
 
@@ -132,20 +134,43 @@ execute_token:
 .add_to_macro:
     dbg "Adding to the current macro"
 
-    call last_command ; rax = *last_command
+    ; Resolve current macro entry
+    call last_command   ; rax = *last_command
+    mov rax, [rax]      ; Deref so that rax points to the command header
 
-    ; Deref so that rax points to the command header
-    mov rax, [rax]
+    ; End the macro body if the current token is ";"
+    cmp rcx, 1
+    jne .add_to_macro_add
+    cmp byte [r11], ';'
+    jne .add_to_macro_add
 
-    ; Now rax points to the last item in the linked list, which is the current macro
-    ; TODO: End the macro body if the current token is ";"
-    ; TODO: optimize: perform some amount of inlining here
+    dbg "End of macro body"
+
+    ; Finalize macro header with code len field
+    mov rcx, r12
+    sub rcx, [rax + command_header.code_ptr]
+    mov [rax + command_header.code_len], rcx
+
+    ; End macro mode
+    mov rax, [r13 + state.flags]
+    xor rax, FLAG_MACRO_BODY
+    mov [r13 + state.flags], rax
+
+    jmp .done
+
+
+.add_to_macro_add:
+    ; TODO: optimize: inline the function under some conditions
+
+    ; XXX: just a ret instruction for now
+    ;mov byte [r12], 0xc3
+    ;inc r12
 
     ; Generate a jump instruction to jump over the invoked function name
     mov [r12], byte 0xe9 ; https://www.felixcloutier.com/x86/jmp.html
     add r12, 1
     mov [r12], ecx       ; Relative jump offset = length of the name
-    add r12, 8
+    add r12, 4
 
     ; Include the actual function name, and set to the end of the macro body after this
     push rcx
@@ -177,7 +202,7 @@ execute_token:
     mov [r12], byte 0xd0 ; ModR/M byte: mod=0b11 (register addressing), reg=0b010 (= /2), m=0b000 (rax)
     inc r12
     ; Pop rax
-    mov [r12], byte 0x50
+    mov [r12], byte 0x58
     inc r12
 
     jmp .done
@@ -191,8 +216,20 @@ execute_token:
 
     dbg "Found, execute"
 
+    mov rbx, [rax + command_header.code_ptr]
+    mov rdx, [rbx]
+    dbg_int rdx
+    mov rdx, [rbx + 8]
+    dbg_int rdx
+    mov rdx, [rbx + 16]
+    dbg_int rdx
+    mov rdx, [rbx + 24]
+    dbg_int rdx
+
+
     ; Execute the command
     call [rax + command_header.code_ptr]
+
 
     jmp .done
 
@@ -275,4 +312,5 @@ last_command:
 
 ; Called by the generated code to execute a token by name
 execute_by_name:
+    dbg "execute_by_name"
     jmp exit

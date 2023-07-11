@@ -55,10 +55,10 @@ def startmacro, ":"
     ret
 endef
 
+; This is not a real command, as it only works in macro mode.
+; In normal execution, it will always error.
 def endmacro, ";"
-    sub r15, 8
-    mov qword [r15], 0
-    ret
+    jmp error_endmacro_outside
 endef
 
 def zero
