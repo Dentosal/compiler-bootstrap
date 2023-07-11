@@ -3,43 +3,9 @@
 bits 64
 org 0x400000
 
+%include "debug.asm"
+
 ; #### Helper macros ####
-
-
-; Generates function that prints message and exits with error code
-%macro dbg 1
-    push rax
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push r8
-    push r9
-    push r10
-    push r11
-
-    mov rax, 1      ; write
-    mov rdi, 1      ; stdout
-    mov rsi, %%msg ; message
-    mov rdx, %%len ; message length
-    syscall
-
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rax
-    jmp %%over
-
-%%msg: db %1, 10
-%%len: equ $ - %%msg
-%%over:
-%endmacro
-
 
 %macro jmp_if_whitespace 1
     cmp byte [rsi], 0x09 ; \t
@@ -96,9 +62,23 @@ _start:
 
     ; Use mmap to allocate some buffers
     call alloc_page
-    mov r10, rax             ; Input buffer in r10
+    mov r10, rax             ; Input buffer
     call alloc_page
-    mov r11, rax             ; Token buffer in r11
+    mov r11, rax             ; Token buffer
+    call alloc_page
+    mov r12, rax             ; This is where data that will not be freed is written
+    mov r13, r12             ; This will be constant, while r12 will be incremented
+
+    ; Stacks grow downwards
+    call alloc_page
+    mov r14, rax             ; Call stack
+    add r14, 4096
+    call alloc_page
+    mov r15, rax             ; Data stack
+    add r15, 4096
+
+    ; Initialize interpreter
+    call init_interpreter
 
     ; Open input file
     mov rdi, [rsp + 16]     ; argv[1]
@@ -165,7 +145,29 @@ _start:
     jmp exit
 
 
-; #### Actual compilation ####
+; #### Token interpreter ####
+
+; Initializes interpreter tokens to r12 memory area
+
+%include "ops.asm"
+
+%macro add_ti_op 1
+    add r12, 16
+    mov qword [r12 - 16], ti_%1
+    mov qword [r12 - 8], r12
+%endmacro
+
+init_interpreter:
+    ; Builtin operations
+    add_ti_op zero
+    add_ti_op inc
+    add_ti_op drop
+    add_ti_op swap
+    add_ti_op dup
+    add_ti_op show
+    ; Clear the last link, so that the linked list ends here
+    mov qword [r12 - 8], 0
+    ret
 
 ; Token at starts at r11 and ends at rdi
 execute_token:
@@ -179,8 +181,14 @@ execute_token:
     push r10
     push r11
 
+
+    ; Debug print token name before executing
+    dbg_nobreak "Executing token: "
+
     mov rcx, rdi
     sub rcx, r11
+    push rdi
+    push rcx
 
     mov rax, 1      ; write
     mov rdi, 1      ; stdout
@@ -194,6 +202,40 @@ execute_token:
     mov rdx, 1
     syscall
 
+    pop rcx
+    pop rdi
+
+
+    ; Lookup token from a linked list starting from
+    mov rax, r13
+    jmp .traverse_lookup
+.traverse_next:
+    mov rax, [rax + 8] ; Link to next item
+    cmp rax, 0
+    je .traverse_not_found
+.traverse_lookup:
+    mov rbx, [rax]
+    mov rdx, [rbx + 16] ; Name len
+
+    cmp rdx, rcx    ; Len mismatch?
+    jne .traverse_next
+
+    ; Obtain name ptr
+    mov rsi, rbx
+    add rsi, 24
+
+    ; Compare to name at r11
+    mov rdi, r11
+    push rcx
+    repe cmpsb
+    pop rcx
+    jnz .traverse_next ; Mismatch
+
+    ; Found the token, call the function
+    call [rbx]
+
+    dbg "Done executing token"
+
     pop r11
     pop r10
     pop r9
@@ -205,6 +247,20 @@ execute_token:
     pop rax
 
     ret
+
+.traverse_not_found: ; Name resolution failed
+    ; Prefix the error message with the token
+    mov rcx, rdi
+    sub rcx, r11
+
+    mov rax, 1      ; write
+    mov rdi, 1      ; stdout
+    mov rsi, r11    ; message
+    mov rdx, rcx    ; message length
+    syscall
+
+    jmp error_unknown_token
+
 
 ; #### Error handling ####
 
@@ -224,12 +280,14 @@ execute_token:
 %endmacro
 
 ; Error messages
-usage:              error   "usage: bootstrap input output"
-error_mmap_buffer:  error   "error: could not allocate buffer"
-error_open_input:   error   "error: could not open input file"
-error_read_input:   error   "error: could not read input file"
-error_open_output:  error   "error: could not open output file"
-error_write_output: error   "error: could not write output file"
+usage:                  error   "usage: bootstrap input output"
+error_mmap_buffer:      error   "error: could not allocate buffer"
+error_munmap:           error   "error: could not free buffer"
+error_open_input:       error   "error: could not open input file"
+error_read_input:       error   "error: could not read input file"
+error_open_output:      error   "error: could not open output file"
+error_write_output:     error   "error: could not write output file"
+error_unknown_token:    error   ": error: unable to resolve name"
 
 ; Exits with return code from rdi
 exit:
@@ -238,30 +296,83 @@ exit:
 
 ; #### Memory management functions ####
 
-; Allocate a buffer of 4096 bytes and store address in r10
+; Allocate a buffer of 4096 bytes
 ; Returns rax = address
 alloc_page:
     push rdi
     push rsi
     push rdx
     push r10
+    push r9
+    push r8
 
     mov rax, 9              ; mmap
     mov rdi, 0              ; let kernel choose address
     mov rsi, 4096           ; page size
     mov rdx, 3              ; rw
     mov r10, 0x22           ; private anonymous mapping
+    xor r8, r8
+    xor r9, r9
     syscall                 ; rax = address
     cmp rax, -1
     je error_mmap_buffer
 
+    pop r8
+    pop r9
     pop r10
     pop rdx
     pop rsi
     pop rdi
     ret
 
+; Free a buffer pointed by rdi
+free_page:
+    push rdi
+    push rsi
+    push rdx
+    push r10
+    push r9
+    push r8
+
+    mov rax, 11             ; munmap
+    mov rsi, 4096           ; page size
+    xor r8, r8
+    xor r9, r9
+    syscall                 ; rax = address
+    cmp rax, -1
+    je error_munmap
+
+    pop r8
+    pop r9
+    pop r10
+    pop rdx
+    pop rsi
+    pop rdi
+    ret
+
+; Store a lenght-prefixed byte array in unfreeable data area (r12)
+; Copies the data from the given source. Returns pointer to the length-prefix.
+; rsi = pointer to data
+; rcx = length
+; Returns rcx = pointer to the length-prefix. Trashes rsi.
+unfreeable_store_with_len:
+    push rdi
+    push r12
+
+    mov [r12], rcx
+    add r12, 8
+    mov rdi, r12
+    rep stosb
+    mov r12, rdi
+
+    pop rcx
+    pop rdi
+    ret
+
+
 ; #### String processing functions ####
+
+%include "convert.asm"
 
 ; Get length of null-terminated string pointed by `rdi`.
 ; Returns length in `rcx`.
@@ -283,10 +394,37 @@ strlen:
 
     ret
 
+; Compares two length-prefixed strings, `rsi` and `rdi`.
+; Sets carry flag if inequal, clears otherwise.
+len_prefixed_eq:
+    push rsi
+    push rdi
+    push rcx
+
+    mov rcx, [rsi]
+    cmp rcx, [rdi]
+    jne .not_equal
+
+    add rsi, 8
+    add rdi, 8
+
+    repe cmpsb
+    jne .not_equal
+
+.equal:
+    clc
+    jmp .over
+.not_equal:
+    stc
+.over:
+    pop rcx
+    pop rdi
+    pop rsi
+    ret
+
 ; #### String literals ####
 
 linebreak: db 10
-
 
 ; #### Helper constants ####
 
