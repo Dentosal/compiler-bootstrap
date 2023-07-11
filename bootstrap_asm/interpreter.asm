@@ -113,13 +113,13 @@ execute_token:
     mov rdi, r12
     add rdi, command_header.name_offset
     rep movsb ; Copy name
-    pop rcx
-    pop rdi
-    pop rsi
     ; Command entry header: function code pointer, just after the header
     mov [r12], rdi
     ; Next free byte: just after the header (used to append code)
     mov r12, rdi
+    pop rcx
+    pop rdi
+    pop rsi
 
     ; Flip the init flag off
     mov rax, [r13 + state.flags]
@@ -225,6 +225,18 @@ execute_token:
     jc .command_not_found
 
     dbg "Found, execute"
+
+
+    ; mov rbx, [rax + command_header.code_ptr]
+    ; mov rdx, [rbx]
+    ; dbg_int rdx
+    ; mov rdx, [rbx + 8]
+    ; dbg_int rdx
+    ; mov rdx, [rbx + 16]
+    ; dbg_int rdx
+    ; mov rdx, [rbx + 24]
+    ; dbg_int rdx
+
 
     ; Execute the command
     call [rax + command_header.code_ptr]
