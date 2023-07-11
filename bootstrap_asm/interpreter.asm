@@ -144,6 +144,10 @@ execute_token:
     cmp byte [r11], ';'
     jne .add_to_macro_add
 
+    ; Add ret instruction to the end
+    mov [r12], byte 0xc3
+    inc r12
+
     dbg "End of macro body"
 
     ; Finalize macro header with code len field
@@ -170,6 +174,7 @@ execute_token:
     mov [r12], byte 0xe9 ; https://www.felixcloutier.com/x86/jmp.html
     add r12, 1
     mov [r12], ecx       ; Relative jump offset = length of the name
+    add [r12], dword 2   ; Add 2 bytes for the function name length
     add r12, 4
 
     ; Include the actual function name, and set to the end of the macro body after this
@@ -184,24 +189,29 @@ execute_token:
     pop rdi
     pop rcx
 
+    ; Function name length
+    ; TODO: properly error on long names, although probably not here but in the parser
+    mov [r12], cx
+    add r12, 2
+
     ; Now r12 points to the target of the generated jump above
     ; Now we generate a instruction to call the function that will execute a token by name
     ; Push rax, since we need to preserve it
     mov [r12], byte 0x50
     inc r12
-    ; Set rax to the address of the function to call
+    ; Set rax to the address of the helper function to call
     mov [r12], byte 0x48 ; REX.W
     inc r12
     mov [r12], byte 0xb8 ; https://www.felixcloutier.com/x86/mov.html MOV r64, imm64
     inc r12
-    mov qword [r12], execute_by_name
+    mov qword [r12], execute_by_name_helper
     add r12, 8
     ; https://www.felixcloutier.com/x86/call.html call near, absolute indirect
     mov [r12], byte 0xff ; Call opcode
     inc r12
     mov [r12], byte 0xd0 ; ModR/M byte: mod=0b11 (register addressing), reg=0b010 (= /2), m=0b000 (rax)
     inc r12
-    ; Pop rax
+    ; Pop rbx and rax
     mov [r12], byte 0x58
     inc r12
 
@@ -216,20 +226,10 @@ execute_token:
 
     dbg "Found, execute"
 
-    mov rbx, [rax + command_header.code_ptr]
-    mov rdx, [rbx]
-    dbg_int rdx
-    mov rdx, [rbx + 8]
-    dbg_int rdx
-    mov rdx, [rbx + 16]
-    dbg_int rdx
-    mov rdx, [rbx + 24]
-    dbg_int rdx
-
-
     ; Execute the command
     call [rax + command_header.code_ptr]
 
+    dbg "Returned"
 
     jmp .done
 
@@ -311,6 +311,46 @@ last_command:
     ret
 
 ; Called by the generated code to execute a token by name
-execute_by_name:
-    dbg "execute_by_name"
-    jmp exit
+execute_by_name_helper:
+    dbg "execute_by_name_helper"
+    ; The caller address is on top of the stack
+    ; Fetch that to rax which is preserved by the caller anyway
+    pop rax
+    push rax
+
+    push_many rcx, rdi
+
+    ; Rax now points to the instruction after call.
+    ; Since we have 13 bytes of instructions after the size, we need to
+    ; subtract 15 to get the 2-byte value of string length.
+    xor rcx, rcx
+    sub rax, 15
+    mov cx, [rax]   ; rcx = length of the name string
+    sub rax, rcx    ; rax = pointer to the name string
+
+
+    push_all
+    dbg_nobreak "Executing inner command: "
+    mov rsi, rax  ; message
+    mov rdx, rcx  ; message length
+    mov rax, 1     ; write
+    mov rdi, 1     ; stdout
+    syscall
+    dbg ""
+    pop_all
+
+    ; Do a command lookup
+    mov rdi, rax
+    call lookup_command
+    jc error_miscompiled_token
+
+    dbg "Found command"
+
+    ; Execute the command
+    call [rax + command_header.code_ptr]
+
+    dbg "Execution complete"
+
+    pop_many rcx, rdi
+
+    ret
