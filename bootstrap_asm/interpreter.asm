@@ -53,7 +53,7 @@ init_interpreter:
 
 ; Token at starts at r11 and ends at rdi
 execute_token:
-    push_all
+    push_many rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11
 
     ; Debug print token name before executing
     dbg_nobreak "Received token: "
@@ -213,7 +213,6 @@ execute_token:
         jnz .traverse_next ; Mismatch
 
         dbg "Calling"
-        dbg_int rbx
 
         ; Found the token, call the function
         call [rbx + command_header.code_ptr]
@@ -223,7 +222,7 @@ execute_token:
 
 
     .traverse_not_found: ; Name resolution failed
-        pop_all
+        pop_many rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11
 
         ; Prefix the error message with the token
         mov rcx, rdi
@@ -240,7 +239,7 @@ execute_token:
 .done:
     dbg "Done"
 
-    pop_all
+    pop_many rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11
     ret
 
 ; Traverse to the last item in the linked list of commands

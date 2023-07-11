@@ -146,21 +146,13 @@ _start:
     call execute_token
     mov rdi, r11 ; clear token buffer
 
-    ; push_all
-
-    ; mov rsi, r10    ; message
-    ; mov rdx, rax     ; message length
-    ; mov rax, 1      ; write
-    ; mov rdi, 1      ; stdout
-    ; syscall
-
-    ; mov rax, 1      ; write
-    ; mov rdi, 1      ; stdout
-    ; mov rsi, separator
-    ; mov rdx, separator_len
-    ; syscall
-
-    ; pop_all
+    ;push_all
+    ;mov rsi, r10    ; message
+    ;mov rdx, rax     ; message length
+    ;mov rax, 1      ; write
+    ;mov rdi, 1      ; stdout
+    ;syscall
+    ;pop_all
 
 
 .empty_token:
@@ -188,12 +180,7 @@ _start:
 ; Allocate a buffer of 4096 bytes
 ; Returns rax = address
 alloc_page:
-    push rdi
-    push rsi
-    push rdx
-    push r10
-    push r9
-    push r8
+    push_many rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15
 
     mov rax, 9              ; mmap
     mov rdi, 0              ; let kernel choose address
@@ -206,17 +193,12 @@ alloc_page:
     cmp rax, -1
     je error_mmap_buffer
 
-    pop r8
-    pop r9
-    pop r10
-    pop rdx
-    pop rsi
-    pop rdi
+    pop_many rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11, r12, r13, r14, r15
     ret
 
 ; Free a buffer pointed by rdi
 free_page:
-    push_many rdi, rsi, rdx, r10, r9, r8
+    push_all
 
     mov rax, 11             ; munmap
     mov rsi, 4096           ; page size
@@ -226,7 +208,7 @@ free_page:
     cmp rax, -1
     je error_munmap
 
-    pop_many r8, r9, r10, rdx, rsi, rdi
+    pop_all
     ret
 
 ; Store a lenght-prefixed byte array in unfreeable data area (r12)

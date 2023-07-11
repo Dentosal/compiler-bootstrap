@@ -15,6 +15,7 @@
 
 ; Error messages
 usage:                  error   "usage: bootstrap input output"
+error_misc:             error   "error: error!"
 error_mmap_buffer:      error   "error: could not allocate buffer"
 error_munmap:           error   "error: could not free buffer"
 error_open_input:       error   "error: could not open input file"

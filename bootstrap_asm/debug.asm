@@ -1,14 +1,8 @@
 ; Generates function that prints message and exits with error code
 %macro dbg 1
-    push rax
-    push rcx
-    push rdx
-    push rsi
-    push rdi
-    push r8
-    push r9
-    push r10
-    push r11
+%ifndef nostack
+    push_all
+%endif
 
     mov rax, 1      ; write
     mov rdi, 1      ; stdout
@@ -17,15 +11,10 @@
     syscall
     js exit
 
-    pop r11
-    pop r10
-    pop r9
-    pop r8
-    pop rdi
-    pop rsi
-    pop rdx
-    pop rcx
-    pop rax
+%ifndef nostack
+    pop_all
+%endif
+
     jmp %%over
 %ifdef nobreak
 %%msg: db %1
@@ -59,12 +48,14 @@
     mov rax, 1      ; write
     mov rdi, 1      ; stdout
     syscall
+    js error_misc
 
     mov rax, 1      ; write
     mov rdi, 1      ; stdout
     mov rsi, linebreak
     mov rdx, 1
     syscall
+    js error_misc
 
     pop rdi
     call free_page
