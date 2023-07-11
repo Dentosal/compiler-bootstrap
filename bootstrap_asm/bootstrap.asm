@@ -73,10 +73,6 @@ _start:
 
     ; Use mmap to allocate some buffers
     call alloc_page
-    mov r10, rax             ; Input buffer
-    call alloc_page
-    mov r11, rax             ; Token buffer
-    call alloc_page
     mov r12, rax             ; This is where data that will not be freed is written
     mov r13, r12             ; This will be constant, while r12 will be incremented
 
@@ -102,7 +98,7 @@ _start:
     js error_open_input
 
     ; Open output file
-    mov rdi, [rsp + 24]     ; argv[1]
+    mov rdi, [rsp + 24]     ; argv[2]
     mov rax, 2              ; open
     mov rsi, fileFlagsOutput; flags
     mov rdx, fileMode       ; mode
@@ -115,17 +111,25 @@ _start:
     mov rdx, 0x40+0x38      ; bytes to write (ELF header size)
     mov rax, 1              ; write
     mov rdi, r9             ; fd
-    mov rsi, 0x400000       ; buffer at r10
+    mov rsi, 0x400000       ; start of this binary
     syscall                 ; rax = bytes written
     js error_write_output
 
     ; Read and compile
+    call alloc_page
+    mov r10, rax             ; Input buffer
+    call alloc_page
+    mov r11, rax             ; Token buffer
+
 .loop:
+    push r11
     ; Read from file
     mov rax, 0              ; read
     mov rdi, r8             ; fd
     mov rsi, r10            ; buffer at r10
     syscall                 ; rax = bytes read
+    pop r11
+
     test rax, rax
     js error_read_input
     jz .eof
@@ -145,15 +149,6 @@ _start:
     je .empty_token
     call execute_token
     mov rdi, r11 ; clear token buffer
-
-    ;push_all
-    ;mov rsi, r10    ; message
-    ;mov rdx, rax     ; message length
-    ;mov rax, 1      ; write
-    ;mov rdi, 1      ; stdout
-    ;syscall
-    ;pop_all
-
 
 .empty_token:
     inc rsi
@@ -210,26 +205,6 @@ free_page:
 
     pop_all
     ret
-
-; Store a lenght-prefixed byte array in unfreeable data area (r12)
-; Copies the data from the given source. Returns pointer to the length-prefix.
-; rsi = pointer to data
-; rcx = length
-; Returns rcx = pointer to the length-prefix. Trashes rsi.
-unfreeable_store_with_len:
-    push rdi
-    push r12
-
-    mov [r12], rcx
-    add r12, 8
-    mov rdi, r12
-    rep stosb
-    mov r12, rdi
-
-    pop rcx
-    pop rdi
-    ret
-
 
 ; #### String processing functions ####
 

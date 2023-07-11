@@ -100,8 +100,10 @@ def show
 endef
 
 def commands
-    dbg "Dumping commands"
     push_all
+%define nostack
+    dbg "Dumping commands"
+%undef nostack
 
     ; Lookup token from a linked list starting from
     mov rax, [r13 + state.oplist]
@@ -118,19 +120,16 @@ def commands
     mov rsi, rbx
     add rsi, 24
 
-    ; Indent
-    dbg_nobreak "  "
-
     ; Print name
+    dbg_nobreak "  "
     push rax
     mov rax, 1      ; write
     mov rdi, 1      ; stdout
     syscall
     js exit
-
     dbg ""          ; Newline
-
     pop rax
+
     jmp .traverse_next
 
 .traverse_done:

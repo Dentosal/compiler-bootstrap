@@ -60,8 +60,8 @@ execute_token:
 
     mov rcx, rdi
     sub rcx, r11
-    push rdi
-    push rcx
+
+    push_many rdi, rcx, r11
 
     mov rax, 1      ; write
     mov rdi, 1      ; stdout
@@ -75,8 +75,7 @@ execute_token:
     mov rdx, 1
     syscall
 
-    pop rcx
-    pop rdi
+    pop_many rdi, rcx, r11
 
     ; Match interpreter state
     mov rax, [r13 + state.flags]
@@ -184,62 +183,79 @@ execute_token:
     jmp .done
 
 .lookup_and_execute_token:
-    dbg "Executing"
+    dbg "Lookup"
 
-    ; Lookup token from a linked list starting pointed by the header
-    mov rax, [r13 + state.oplist]
+    mov rdi, r11
+    call lookup_command
+    jc .command_not_found
 
-    jmp .traverse_lookup
-    .traverse_next:
-        mov rax, [rax + 8] ; Link to next item
-        cmp rax, 0
-        je .traverse_not_found
-    .traverse_lookup:
-        mov rbx, [rax]
-        mov rdx, [rbx + command_header.name_len]
+    dbg "Found, execute"
 
-        cmp rdx, rcx    ; Len mismatch?
-        jne .traverse_next
+    ; Execute the command
+    call [rax + command_header.code_ptr]
 
-        ; Obtain name ptr
-        mov rsi, rbx
-        add rsi, 24
+    jmp .done
 
-        ; Compare to name at r11
-        mov rdi, r11
-        push rcx
-        repe cmpsb
-        pop rcx
-        jnz .traverse_next ; Mismatch
+.command_not_found:
+    pop_many rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11
 
-        dbg "Calling"
+    ; Prepend the error message with the token
+    mov rcx, rdi
+    sub rcx, r11
 
-        ; Found the token, call the function
-        call [rbx + command_header.code_ptr]
+    mov rax, 1      ; write
+    mov rdi, 1      ; stdout
+    mov rsi, r11    ; message
+    mov rdx, rcx    ; message length
+    syscall
 
-        dbg "Done executing token"
-        jmp .done
-
-
-    .traverse_not_found: ; Name resolution failed
-        pop_many rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11
-
-        ; Prefix the error message with the token
-        mov rcx, rdi
-        sub rcx, r11
-
-        mov rax, 1      ; write
-        mov rdi, 1      ; stdout
-        mov rsi, r11    ; message
-        mov rdx, rcx    ; message length
-        syscall
-
-        jmp error_unknown_token
+    jmp error_unknown_token
 
 .done:
     dbg "Done"
 
     pop_many rax, rbx, rcx, rdx, rsi, rdi, r8, r9, r10, r11
+    ret
+
+; Lookup a command by name ptr=rdi,len=rcx.
+; Returns rax=ptr on success.
+; Sets carry flag on not found.
+lookup_command:
+    push_many rbx, rdx, rsi
+
+    ; Lookup token from a linked list starting pointed by the header
+    mov rax, [r13 + state.oplist]
+
+    jmp .traverse_lookup
+.traverse_next:
+    mov rax, [rax + 8] ; Link to next item
+    cmp rax, 0
+    je .traverse_not_found
+.traverse_lookup:
+    mov rbx, [rax]
+    mov rdx, [rbx + command_header.name_len]
+
+    ; Compare lengths
+    cmp rdx, rcx
+    jne .traverse_next ; Len mismatch
+
+    ; Obtain name ptr
+    mov rsi, rbx
+    add rsi, command_header.name_offset
+
+    ; Compare strings
+    push_many rcx, rdi
+    repe cmpsb
+    pop_many rcx, rdi
+    jnz .traverse_next ; Mismatch
+
+    mov rax, rbx
+    jmp .done
+
+.traverse_not_found: ; Name resolution failed
+    stc
+.done:
+    pop_many rbx, rdx, rsi
     ret
 
 ; Traverse to the last item in the linked list of commands
@@ -256,7 +272,6 @@ last_command:
 .done:
     pop rbx
     ret
-
 
 ; Called by the generated code to execute a token by name
 execute_by_name:
