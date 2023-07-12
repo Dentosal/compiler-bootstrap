@@ -97,11 +97,27 @@ def swap
     ret
 endef
 
-def dup
+def pick ; pick nth item from stack
     push rax
-    mov rax, [r15]
+    ds_pop rax
+    mov rax, [r15 + 8 * rax]
     ds_push rax
     pop rax
+    ret
+endef
+
+def roll ; roll nth item to top of stack, moving everything above it down
+    push_many rax, rcx, rsi, rdi
+    ds_pop rcx
+    mov rax, [r15 + 8 * rcx] ; save the nth item
+    lea rsi, [r15 + 8 * rcx]
+    mov rdi, rsi
+    sub rsi, 8
+    std ; reverse direction
+    rep movsq
+    cld
+    mov [r15], rax
+    pop_many rax, rcx, rsi, rdi
     ret
 endef
 

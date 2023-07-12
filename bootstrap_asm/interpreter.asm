@@ -45,7 +45,8 @@ init_interpreter:
     add_builtin_op zero
     add_builtin_op drop
     add_builtin_op swap
-    add_builtin_op dup
+    add_builtin_op pick
+    add_builtin_op roll
     add_builtin_op inc
     add_builtin_op dec
     add_builtin_op add
@@ -105,7 +106,6 @@ execute_token:
 
     ; Match interpreter state
     mov rax, [r13 + state.flags]
-    dbg_int rax
     test rax, FLAG_MACRO_INIT
     jnz .initalize_macro_mode
     test rax, FLAG_MACRO_BODY
