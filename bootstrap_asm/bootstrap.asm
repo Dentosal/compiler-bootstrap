@@ -121,20 +121,20 @@ _start:
     call alloc_page
     mov r11, rax             ; Token buffer
 
+    mov rdi, r11    ; pointer to current position in token buffer
 .loop:
-    push r11
+    push_many r11, rdi
     ; Read from file
     mov rax, 0              ; read
     mov rdi, r8             ; fd
     mov rsi, r10            ; buffer at r10
     syscall                 ; rax = bytes read
-    pop r11
+    pop_many r11, rdi
 
     test rax, rax
     js error_read_input
     jz .eof
 
-    mov rdi, r11    ; pointer to current position in token buffer
     mov rsi, r10    ; pointer to current position in input buffer
     mov rcx, rax    ; loop limit at bytes read
 
