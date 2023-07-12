@@ -1,5 +1,6 @@
-%define FLAG_MACRO_INIT 1 ; The next token is the macro name, and body starts after
-%define FLAG_MACRO_BODY 2 ; The current token is compiled into the current macro
+%define FLAG_MACRO_INIT     1 ; The next token is the macro name, and body starts after
+%define FLAG_MACRO_BODY     2 ; The current token is compiled into the current macro
+%define FLAG_ADDROF_NAME    4 ; The next token is a name to be resolved
 
 struc command_header
     .code_ptr: resq 1
@@ -40,6 +41,7 @@ init_interpreter:
     ; Builtin commands
     add_builtin_op startmacro
     add_builtin_op endmacro
+    add_builtin_op addrof
     add_builtin_op zero
     add_builtin_op drop
     add_builtin_op swap
@@ -55,6 +57,8 @@ init_interpreter:
     add_builtin_op and
     add_builtin_op or
     add_builtin_op xor
+    add_builtin_op call
+    add_builtin_op return
     add_builtin_op ptr_read_u8
     add_builtin_op ptr_read_u16
     add_builtin_op ptr_read_u32
@@ -104,6 +108,8 @@ execute_token:
     jnz .initalize_macro_mode
     test rax, FLAG_MACRO_BODY
     jnz .add_to_macro
+    test rax, FLAG_ADDROF_NAME
+    jnz .push_addrof_name
 
     jmp .lookup_and_execute_token
 
@@ -262,6 +268,25 @@ execute_token:
     call [rax + command_header.code_ptr]
 
     dbg "Returned"
+
+    jmp .done
+
+.push_addrof_name:
+    dbg "Lookup name and push addr"
+
+    mov rdi, r11
+    call lookup_command
+    jc .command_not_found
+
+    dbg "Found, push ptr"
+
+    mov rax, [rax + command_header.code_ptr]
+    ds_push rax
+
+    ; End escaped mode
+    mov rax, [r13 + state.flags]
+    xor rax, FLAG_ADDROF_NAME
+    mov [r13 + state.flags], rax
 
     jmp .done
 

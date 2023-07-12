@@ -36,6 +36,7 @@ builtin_%1:
 %pop fndef
 %endmacro
 
+; == Special operations ==
 
 def startmacro, ":"
     push rax
@@ -43,6 +44,7 @@ def startmacro, ":"
     ; Read flags
     mov rax, [r13 + state.flags]
     ; If we're already in a macro, error
+    ; ^ TODO: this cannot be called, that should be handled in the compile-mode interpreter function
     test rax, FLAG_MACRO_INIT
     jnz error_macro_nesting
     test rax, FLAG_MACRO_BODY
@@ -59,6 +61,17 @@ endef
 ; In normal execution, it will always error.
 def endmacro, ";"
     jmp error_endmacro_outside
+endef
+
+
+def addrof ; get address of a function by name
+
+    ; Set flag
+    mov rax, [r13 + state.flags]
+    or rax, FLAG_ADDROF_NAME
+    mov [r13 + state.flags], rax
+
+    ret
 endef
 
 
@@ -191,7 +204,19 @@ endef
 
 ; == Control flow ==
 
-; TODO
+def call ; call a function by pointer
+    push rax
+    ds_pop rax
+    call rax
+    pop rax
+    ret
+endef
+
+def return ; early return from macro context
+    add rsp, 16
+    pop rax
+    ret
+endef
 
 ; == Raw memory access ==
 
