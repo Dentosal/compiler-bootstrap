@@ -212,8 +212,32 @@ def call ; call a function by pointer
     ret
 endef
 
+def ccall ; conditional call
+    push_many rax, rbx
+    ds_pop rax
+    ds_pop rbx
+    test rbx, rbx
+    pop rbx
+    jz .skip
+    call rax
+.skip:
+    pop rax
+    ret
+endef
+
 def return ; early return from macro context
     add rsp, 16
+    pop rax
+    ret
+endef
+
+def creturn ; conditional early return from macro context
+    push rax
+    ds_pop rax
+    test rax, rax
+    jz .skip
+    add rsp, 24
+.skip:
     pop rax
     ret
 endef

@@ -58,7 +58,9 @@ init_interpreter:
     add_builtin_op or
     add_builtin_op xor
     add_builtin_op call
+    add_builtin_op ccall
     add_builtin_op return
+    add_builtin_op creturn
     add_builtin_op ptr_read_u8
     add_builtin_op ptr_read_u16
     add_builtin_op ptr_read_u32
