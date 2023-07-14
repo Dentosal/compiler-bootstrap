@@ -109,6 +109,8 @@ endef
 def roll ; roll nth item to top of stack, moving everything above it down
     push_many rax, rcx, rsi, rdi
     ds_pop rcx
+    test rcx, rcx
+    jz .skip
     mov rax, [r15 + 8 * rcx] ; save the nth item
     lea rsi, [r15 + 8 * rcx]
     mov rdi, rsi
@@ -117,6 +119,7 @@ def roll ; roll nth item to top of stack, moving everything above it down
     rep movsq
     cld
     mov [r15], rax
+.skip:
     pop_many rax, rcx, rsi, rdi
     ret
 endef
