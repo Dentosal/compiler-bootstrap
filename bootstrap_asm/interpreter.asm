@@ -58,6 +58,8 @@ init_interpreter:
     add_builtin_op and
     add_builtin_op or
     add_builtin_op xor
+    add_builtin_op eq
+    add_builtin_op lt
     add_builtin_op call
     add_builtin_op ccall
     add_builtin_op return

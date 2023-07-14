@@ -221,6 +221,34 @@ def xor
     ret
 endef
 
+def eq
+    push_many rax, rdx
+    ds_pop rdx
+    ds_pop rax
+    cmp rax, rdx
+    mov rax, 0
+    jne .false
+    inc rax
+.false:
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
+def lt
+    push_many rax, rdx
+    ds_pop rdx
+    ds_pop rax
+    cmp rax, rdx
+    mov rax, 0
+    jge .false
+    inc rax
+.false:
+    ds_push rax
+    pop_many rax, rdx
+    ret
+endef
+
 ; == Control flow ==
 
 def call ; call a function by pointer
