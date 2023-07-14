@@ -1,0 +1,23 @@
+: one zero inc ;
+: two one inc ;
+: three two inc ;
+: four three inc ;
+: five four inc ;
+
+: dup zero pick ;
+
+: factorial_inner
+    dup zero eq creturn
+    dup two roll
+    mul swap dec
+    factorial_inner
+;
+
+: factorial
+    one
+    swap
+    factorial_inner
+    drop
+;
+
+five factorial show
