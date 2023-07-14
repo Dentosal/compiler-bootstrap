@@ -25,7 +25,6 @@ error_write_output:         error   "error: could not write output file"
 error_unknown_token:        error   ": error: unable to resolve name"
 error_macro_nesting:        error   "error: cannot nest definitions"
 error_endmacro_outside:     error   "error: endmacro (;) outside macro context"
-error_miscompiled_token:    error   "error: miscompiled: invalid name generated"
 
 ; Exits with return code from rdi
 exit:

@@ -64,16 +64,15 @@ def endmacro, ";"
 endef
 
 
-def addrof ; get address of a function by name
-
+def addrof, "\" ; get address of a function by name
+    push rax
     ; Set flag
     mov rax, [r13 + state.flags]
     or rax, FLAG_ADDROF_NAME
     mov [r13 + state.flags], rax
-
+    pop rax
     ret
 endef
-
 
 ; == Stack operations ==
 
@@ -282,9 +281,9 @@ def creturn ; conditional early return from macro context
     push rax
     ds_pop rax
     test rax, rax
-    jz .skip
-    add rsp, 24
-.skip:
+    jz .noreturn
+    add rsp, 16
+.noreturn:
     pop rax
     ret
 endef
@@ -390,6 +389,13 @@ endef
 
 ; == Debugging and dev utils ==
 
+def debug
+    dbg "Debug point reached"
+    dbg_nobreak " stack top: "
+    dbg_int [r15]
+    ret
+endef
+
 def show
     dbg_int [r15]
     ret
@@ -425,6 +431,12 @@ def commands
     js exit
     dbg ""          ; Newline
     pop rax
+
+    ; Print addr
+    dbg_nobreak "    "
+    mov rdx, [rbx + command_header.code_ptr]
+    dbg_int rdx
+
 
     jmp .traverse_next
 

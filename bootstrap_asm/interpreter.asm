@@ -74,6 +74,7 @@ init_interpreter:
     add_builtin_op ptr_write_u64
     add_builtin_op syscall
     add_builtin_op output_file_fd
+    add_builtin_op debug
     add_builtin_op show
     add_builtin_op commands
     ; Clear the last link, so that the linked list ends here
@@ -164,16 +165,35 @@ execute_token:
 .add_to_macro:
     dbg "Adding to the current macro"
 
+    ; Special case: addrof is resolved immediately
+    test rax, FLAG_ADDROF_NAME ; rax still contains flags
+    jnz .add_to_macro_addrof
+
     ; Resolve current macro entry
     call last_command   ; rax = *last_command
     mov rax, [rax]      ; Deref so that rax points to the command header
 
-    ; End the macro body if the current token is ";"
+    ; Special case handling
     cmp rcx, 1
-    jne .add_to_macro_add
+    jne .add_to_macro_add ; Normal case, since all special tokens are 1 byte long
     cmp byte [r11], ';'
-    jne .add_to_macro_add
+    je .end_macro_body
+    cmp byte [r11], '\'
+    je .set_addrof_mode
 
+    jmp .add_to_macro_add ; Normal case
+
+.set_addrof_mode:
+    dbg "Setting addrof mode"
+
+    ; Set flag
+    mov rax, [r13 + state.flags]
+    or rax, FLAG_ADDROF_NAME
+    mov [r13 + state.flags], rax
+
+    jmp .done
+
+.end_macro_body:
     ; Add ret instruction to the end
     mov [r12], byte 0xc3
     inc r12
@@ -196,54 +216,71 @@ execute_token:
 .add_to_macro_add:
     ; TODO: optimize: inline the function under some conditions
 
-    ; XXX: just a ret instruction for now
-    ;mov byte [r12], 0xc3
-    ;inc r12
+    ; Resolve the function to add
+    mov rdi, r11
+    call lookup_command ; rax = pointer to command header
+    jc .command_not_found
 
-    ; Generate a jump instruction to jump over the invoked function name
-    mov [r12], byte 0xe9 ; https://www.felixcloutier.com/x86/jmp.html
-    add r12, 1
-    mov [r12], ecx       ; Relative jump offset = length of the name
-    add [r12], dword 2   ; Add 2 bytes for the function name length
-    add r12, 4
-
-    ; Include the actual function name, and set to the end of the macro body after this
-    push rcx
-    push rdi
-    push rsi
-    mov rsi, r11
-    mov rdi, r12
-    rep movsb
-    mov r12, rdi
-    pop rsi
-    pop rdi
-    pop rcx
-
-    ; Function name length
-    ; TODO: properly error on long names, although probably not here but in the parser
-    mov [r12], cx
-    add r12, 2
-
-    ; Now r12 points to the target of the generated jump above
-    ; Now we generate a instruction to call the function that will execute a token by name
-    ; Push rax, since we need to preserve it
-    mov [r12], byte 0x50
-    inc r12
-    ; Set rax to the address of the helper function to call
+    ; Generate an instruction to call the function
     mov [r12], byte 0x48 ; REX.W
     inc r12
     mov [r12], byte 0xb8 ; https://www.felixcloutier.com/x86/mov.html MOV r64, imm64
     inc r12
-    mov qword [r12], execute_by_name_helper
+    mov rbx, [rax + command_header.code_ptr]
+    mov qword [r12], rbx ; code pointer
     add r12, 8
     ; https://www.felixcloutier.com/x86/call.html call near, absolute indirect
     mov [r12], byte 0xff ; Call opcode
     inc r12
-    mov [r12], byte 0xd0 ; ModR/M byte: mod=0b11 (register addressing), reg=0b010 (= /2), m=0b000 (rax)
+    mov [r12], byte 0xd0 ; ModR/M byte: mod=0b00 (register indirect addressing), reg=0b010 (= /2), m=0b000 (rax)
     inc r12
-    ; Pop rax
-    mov [r12], byte 0x58
+
+    jmp .done
+
+.add_to_macro_addrof:
+    dbg "Adding addrof to the current macro"
+
+    ; Resolve the name
+    mov rdi, r11
+    call lookup_command  ; rax = command header code pointer
+    jc .command_not_found
+
+    ; Generate an instruction to push the address of the function to the stack
+    ; sub r15, 8
+    mov [r12], byte 0x49 ; REX.W + REX.B
     inc r12
+    mov [r12], byte 0x83 ; https://www.felixcloutier.com/x86/sub.html SUB r/m64, imm8
+    inc r12
+    mov [r12], byte 0xef ; ModR/M byte: mod=0b11 (register direct addressing), reg=0b101 (= /5), r/m=0b111 (r15)
+    inc r12
+    mov [r12], byte 0x08 ; imm8 = 0x8
+    inc r12
+    ; mov rax, ADDR_OF_FUNCTION
+    mov [r12], byte 0x48 ; REX.W
+    inc r12
+    mov [r12], byte 0xb8 ; https://www.felixcloutier.com/x86/mov.html MOV r64, imm64
+    inc r12
+    mov qword [r12], rax ; code pointer
+    add r12, 8
+    ; mov rax, [rax]
+    mov [r12], byte 0x48 ; REX.W
+    inc r12
+    mov [r12], byte 0x8b ; https://www.felixcloutier.com/x86/mov.html MOV r64, r/m64
+    inc r12
+    mov [r12], byte 0x00 ; ModR/M byte: mod=0b11 (register indirect addressing), reg=0b000 (= /rax), r/m=0b000 (rax)
+    inc r12
+    ; mov [r15], rax
+    mov [r12], byte 0x49 ; REX.W + REX.B
+    inc r12
+    mov [r12], byte 0x89 ; https://www.felixcloutier.com/x86/mov.html MOV r/m64, r64
+    inc r12
+    mov [r12], byte 0x07 ; ModR/M byte: mod=0b11 (register indirect addressing), reg=0b000 (= /rax), r/m=0b111 (r15)
+    inc r12
+
+    ; End escaped mode
+    mov rax, [r13 + state.flags]
+    xor rax, FLAG_ADDROF_NAME
+    mov [r13 + state.flags], rax
 
     jmp .done
 
@@ -255,18 +292,6 @@ execute_token:
     jc .command_not_found
 
     dbg "Found, execute"
-
-
-    ; mov rbx, [rax + command_header.code_ptr]
-    ; mov rdx, [rbx]
-    ; dbg_int rdx
-    ; mov rdx, [rbx + 8]
-    ; dbg_int rdx
-    ; mov rdx, [rbx + 16]
-    ; dbg_int rdx
-    ; mov rdx, [rbx + 24]
-    ; dbg_int rdx
-
 
     ; Execute the command
     call [rax + command_header.code_ptr]
@@ -369,49 +394,4 @@ last_command:
     jmp .traverse
 .done:
     pop rbx
-    ret
-
-; Called by the generated code to execute a token by name
-execute_by_name_helper:
-    dbg "execute_by_name_helper"
-    ; The caller address is on top of the stack
-    ; Fetch that to rax which is preserved by the caller anyway
-    pop rax
-    push rax
-
-    push_many rcx, rdi
-
-    ; Rax now points to the instruction after call.
-    ; Since we have 13 bytes of instructions after the size, we need to
-    ; subtract 15 to get the 2-byte value of string length.
-    xor rcx, rcx
-    sub rax, 15
-    mov cx, [rax]   ; rcx = length of the name string
-    sub rax, rcx    ; rax = pointer to the name string
-
-
-    push_all
-    dbg_nobreak "Executing inner command: "
-    mov rsi, rax  ; message
-    mov rdx, rcx  ; message length
-    mov rax, 1     ; write
-    mov rdi, 1     ; stdout
-    syscall
-    dbg ""
-    pop_all
-
-    ; Do a command lookup
-    mov rdi, rax
-    call lookup_command
-    jc error_miscompiled_token
-
-    dbg "Found command"
-
-    ; Execute the command
-    call [rax + command_header.code_ptr]
-
-    dbg "Execution complete"
-
-    pop_many rcx, rdi
-
     ret
